@@ -48,7 +48,7 @@ CFG_PADRAO = {
     "grupo": "minha-rede",                     # mesma palavra em todos os PCs
     "nome": socket.gethostname(),              # como este PC aparece para os outros
     "pasta": str(Path.home() / "Downloads" / "Recebidos Ponte"),
-    "servidor": "",                            # ex.: https://ponte-xyz.onrender.com (vazio = só Wi-Fi)
+    "servidor": "https://ponte-rvr.onrender.com",  # vazio = só Wi-Fi
 }
 
 
@@ -487,7 +487,7 @@ class JanelaConfig:
         self.grupo = self._campo(w, "2. Palavra do grupo (igual em TODOS os computadores)",
                                  "Funciona como senha da equipe. Ex.: rvr-obra-2026", grupo_atual)
         self.servidor = self._campo(w, "3. Endereço do servidor (para enviar pela internet)",
-                                    "Cole o endereço do Render. Deixe vazio para usar só no mesmo Wi‑Fi.",
+                                    "Já vem preenchido. Apague só se quiser usar apenas no mesmo Wi‑Fi.",
                                     CFG.get("servidor", ""))
 
         self.auto = tk.BooleanVar(value=True if primeira else inicia_com_windows())
