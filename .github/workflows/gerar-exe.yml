@@ -1,0 +1,48 @@
+name: Gerar Ponte.exe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ponte.py"
+      - "requirements.txt"
+      - ".github/workflows/gerar-exe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  gerar:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar o Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install pyinstaller -r requirements.txt
+
+      - name: Montar o Ponte.exe
+        run: pyinstaller --noconsole --onefile --name Ponte --collect-all tkinterdnd2 ponte.py
+
+      - name: Publicar para download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.${{ github.run_number }}
+          name: Ponte v1.${{ github.run_number }}
+          make_latest: true
+          files: dist/Ponte.exe
+          body: |
+            ## Como instalar
+            1. Baixe o **Ponte.exe** aqui embaixo, em *Assets*.
+            2. Crie a pasta **Documentos\Ponte** e coloque o arquivo lá dentro.
+            3. Abra. Se o Windows avisar, clique em **Mais informações → Executar assim mesmo**.
+            4. No firewall, marque **Redes privadas** e clique em **Permitir acesso**.
+            5. Preencha o nome do computador e a **palavra do grupo** (igual em todos os PCs do escritório) e clique em **Salvar**.
+
+            Pronto: aperte **Shift 3 vezes** para enviar arquivos.
