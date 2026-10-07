@@ -371,6 +371,54 @@ def conectar_internet():
         time.sleep(espera)
 
 
+# ------------------------------------- arquivos selecionados no Explorer
+def janela_em_foco():
+    if os.name != "nt":
+        return 0
+    try:
+        import ctypes
+        return int(ctypes.windll.user32.GetForegroundWindow())
+    except Exception:
+        return 0
+
+
+def arquivos_selecionados(hwnd):
+    """Arquivos selecionados na pasta (ou Área de Trabalho) que estava em foco ao apertar Shift 3x."""
+    if os.name != "nt" or not hwnd:
+        return []
+    try:
+        import ctypes
+        import pythoncom
+        import win32com.client
+        pythoncom.CoInitialize()
+        shell = win32com.client.Dispatch("Shell.Application")
+        janelas = shell.Windows()
+        doc = None
+        for w in janelas:
+            try:
+                if int(w.HWND) == hwnd:
+                    doc = w.Document
+                    break
+            except Exception:
+                continue
+        if doc is None:   # Área de Trabalho
+            nome = ctypes.create_unicode_buffer(64)
+            ctypes.windll.user32.GetClassNameW(hwnd, nome, 64)
+            if nome.value in ("Progman", "WorkerW"):
+                try:
+                    r = janelas.FindWindowSW(0, 0, 8, 0, 1)   # SWC_DESKTOP, SWFO_NEEDDISPATCH
+                    desk = r[0] if isinstance(r, tuple) else r
+                    doc = desk.Document
+                except Exception:
+                    doc = None
+        if doc is None:
+            return []
+        caminhos = [str(item.Path) for item in doc.SelectedItems()]
+        return [c for c in caminhos if os.path.exists(c)]
+    except Exception:
+        return []
+
+
 # --------------------------------------------------------- atalho 3x SHIFT
 def iniciar_atalho():
     from pynput import keyboard
@@ -398,7 +446,7 @@ def iniciar_atalho():
         estado["toques"] = t
         if len(t) >= 3:
             estado["toques"] = []
-            ui.put(("abrir",))
+            ui.put(("abrir", janela_em_foco()))
 
     keyboard.Listener(on_press=press, on_release=release, daemon=True).start()
 
@@ -584,9 +632,11 @@ class Overlay:
         self.enviando = False
         self._assinatura = None
 
-    def abrir(self):
+    def abrir(self, arquivos=None):
         if self.win:
             self.win.lift()
+            if arquivos:
+                self.definir(arquivos)
             return
         w = tk.Toplevel(self.root)
         self.win = w
@@ -604,7 +654,7 @@ class Overlay:
         caixa.place(relx=0.5, rely=0.5, anchor="center")
         tk.Label(caixa, text="Enviar para…", fg="#ffffff", bg="#000000",
                  font=(FONTE, 30, "bold")).pack(pady=(0, 22))
-        dica = "Arraste arquivos ou pastas aqui  ·  ou clique para escolher" if DND \
+        dica = "Solte o arquivo em cima de um computador  ·  ou clique aqui para escolher" if DND \
             else "Clique aqui para escolher os arquivos"
         self.zona = tk.Label(caixa, text=dica, fg="#d0d0d0", bg="#1a1a1a", font=(FONTE, 14),
                              padx=50, pady=34, cursor="hand2")
@@ -628,6 +678,8 @@ class Overlay:
             b.bind("<Button-1>", lambda e, a=acao: a())
         self._fade(0.0)
         self._atualizar_pcs()
+        if arquivos:
+            self.definir(arquivos)
         w.focus_force()
 
     def _fade(self, a):
@@ -645,7 +697,7 @@ class Overlay:
         if not self.win:
             return
         vivos = pares_ativos()
-        assinatura = tuple((p["nome"], p["ip"]) for p in vivos)
+        assinatura = tuple((p["id"], p["nome"], p["via"]) for p in vivos)
         if assinatura != self._assinatura:
             self._assinatura = assinatura
             for filho in self.grade.winfo_children():
@@ -655,11 +707,16 @@ class Overlay:
                          fg="#9a9a9a", bg="#000000", font=(FONTE, 13)).grid(row=0, column=0)
             for i, p in enumerate(vivos):
                 icone = "🖥" if p["via"] == "lan" else "🌐"
-                tk.Button(self.grade, text=f"{icone}   {p['nome']}", width=22, relief="flat",
-                          bg="#262626", fg="#ffffff", activebackground="#2f6fed",
-                          activeforeground="#ffffff", font=(FONTE, 15), pady=14, cursor="hand2",
-                          command=lambda par=p: self.enviar_para(par)
-                          ).grid(row=i // 3, column=i % 3, padx=8, pady=8)
+                b = tk.Button(self.grade, text=f"{icone}   {p['nome']}", width=22, relief="flat",
+                              bg="#262626", fg="#ffffff", activebackground="#2f6fed",
+                              activeforeground="#ffffff", font=(FONTE, 15), pady=14, cursor="hand2",
+                              command=lambda par=p: self.enviar_para(par))
+                b.grid(row=i // 3, column=i % 3, padx=8, pady=8)
+                if DND:   # soltar o arquivo direto em cima do computador
+                    b.drop_target_register(DND_FILES)
+                    b.dnd_bind("<<DropEnter>>", lambda e, bt=b: (bt.config(bg="#2f6fed"), e.action)[1])
+                    b.dnd_bind("<<DropLeave>>", lambda e, bt=b: (bt.config(bg="#262626"), e.action)[1])
+                    b.dnd_bind("<<Drop>>", lambda e, par=p, bt=b: self.soltou_em(par, e, bt))
         self.win.after(1000, self._atualizar_pcs)
 
     def escolher(self):
@@ -675,6 +732,15 @@ class Overlay:
 
     def soltou(self, evento):
         self.definir(list(self.root.tk.splitlist(evento.data)))
+        return evento.action
+
+    def soltou_em(self, par, evento, botao=None):
+        """Arquivo solto em cima de um computador: envia na hora."""
+        if botao is not None:
+            botao.config(bg="#262626")
+        self.definir(list(self.root.tk.splitlist(evento.data)))
+        self.enviar_para(par)
+        return evento.action
 
     def definir(self, caminhos):
         self.arquivos = caminhos
@@ -749,7 +815,7 @@ def main():
                 ev = ui.get_nowait()
                 tipo = ev[0]
                 if tipo == "abrir":
-                    ov.abrir()
+                    ov.abrir(arquivos_selecionados(ev[1] if len(ev) > 1 else 0))
                 elif tipo == "recebido":
                     _, de, caminho = ev
                     toast(root, "📥  Arquivo recebido", f"{de} enviou: {Path(caminho).name}", caminho)
