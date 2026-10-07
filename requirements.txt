@@ -1,0 +1,4 @@
+pynput
+tkinterdnd2
+requests
+websocket-client
